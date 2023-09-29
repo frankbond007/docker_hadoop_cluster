@@ -1,0 +1,96 @@
+version: "3"
+
+services:
+    namenode:
+      image: debian:buster-slim
+      container_name: namenode
+      build:
+        context: .
+        dockerfile: Dockerfile.namenode
+      hostname: namenode
+      env_file:
+        - ./config
+      environment:
+        - CLUSTER_NAME=test-cluster
+      volumes:
+        - namenode:/hadoop/dfs/name
+        - ./hive-site.xml:/opt/hive/conf/hive-site.xml
+        - ./hbase-site.xml:/opt/hbase/conf/hbase-site.xml
+      command: /entrypoint.sh namenode
+
+    datanode:
+      image: debian:buster-slim
+      container_name: datanode
+      build:
+        context: .
+        dockerfile: Dockerfile.datanode
+      env_file:
+        - ./config
+      environment:
+        - SERVICE_PRECONDITION="namenode:9870"
+      volumes:
+        - datanode:/hadoop/dfs/data
+        - ./hive-site.xml:/opt/hive/conf/hive-site.xml
+        - ./hbase-site.xml:/opt/hbase/conf/hbase-site.xml
+      command: /entrypoint.sh datanode
+
+    resourcemanager:
+        image: apache/hadoop:3
+        hostname: resourcemanager
+        command: [ "yarn", "resourcemanager" ]
+        ports:
+          - 8088:8088
+        env_file:
+          - ./config
+        volumes:
+          - ./test.sh:/opt/test.sh
+
+    nodemanager:
+        image: apache/hadoop:3
+        command: [ "yarn", "nodemanager" ]
+        env_file:
+          - ./config
+
+    #Spark Services
+    spark-master:
+      image: bitnami/spark:3
+      container_name: spark-master
+      environment:
+        - SPARK_MODE=master
+        - SPARK_RPC_AUTHENTICATION_ENABLED=no
+        - SPARK_RPC_ENCRYPTION_ENABLED=no
+      ports:
+        - "8080:8080"
+
+    spark-worker:
+      image: bitnami/spark:3
+      container_name: spark-worker
+      environment:
+        - SPARK_MODE=worker
+        - SPARK_MASTER_URL=spark://spark-master:7077
+        - SPARK_WORKER_MEMORY=1G
+        - SPARK_WORKER_CORES=1
+        - SPARK_RPC_AUTHENTICATION_ENABLED=no
+        - SPARK_RPC_ENCRYPTION_ENABLED=no
+
+    #Kafka Services
+    zookeeper:
+      image: confluentinc/cp-zookeeper:latest
+      environment:
+        - ZOOKEEPER_CLIENT_PORT=2181
+        - ZOOKEEPER_TICK_TIME=2000
+
+    kafka:
+        image: confluentinc/cp-kafka:latest
+        depends_on:
+          - zookeeper
+        environment:
+          - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+          - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+          - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+        ports:
+          - "9092:9092"
+
+volumes:
+    namenode:
+    datanode:
